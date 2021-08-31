@@ -81,8 +81,12 @@ async fn parse(
 	trace!("found mapping: {} -> {}", src_v6, dst_v6);
 
 	match ipv4.get_next_level_protocol() {
-		IpNextHeaderProtocols::Udp => parse_udp(buf, payload_start, src_v6, dst_v6, tun).await,
-		IpNextHeaderProtocols::Tcp => bail!("implement tcp"),
+		IpNextHeaderProtocols::Udp => {
+			parse_udp(buf, payload_start, size, src_v6, dst_v6, tun).await
+		}
+		IpNextHeaderProtocols::Tcp => {
+			parse_tcp(buf, payload_start, size, src_v6, dst_v6, tun).await
+		}
 		p => bail!("Protocol not yet supported: {}", p),
 	}
 }
@@ -90,13 +94,14 @@ async fn parse(
 async fn parse_udp(
 	mut buf: [u8; 1500],
 	udp_start: usize,
+	size_read: usize,
 	src: Ipv6Addr,
 	dst: Ipv6Addr,
 	mut tun: AsyncTunSocket,
 ) -> Result<()> {
 	use pnet::packet::udp::{MutableUdpPacket, UdpPacket};
 
-	let udp_repr = UdpPacket::new(&buf[udp_start..])
+	let udp_repr = UdpPacket::new(&buf[udp_start..size_read])
 		.context("Failed to allocate udp repr")?
 		.from_packet();
 
@@ -133,6 +138,46 @@ async fn parse_udp(
 	trace!("writing v6: {:?}", ipv6);
 
 	tun.write_all(&ipv6.packet()[..length - 8]).await?;
+
+	Ok(())
+}
+
+async fn parse_tcp(
+	mut buf: [u8; 1500],
+	tcp_start: usize,
+	size_read: usize,
+	src: Ipv6Addr,
+	dst: Ipv6Addr,
+	mut tun: AsyncTunSocket,
+) -> Result<()> {
+	use pnet::packet::tcp::{MutableTcpPacket, TcpPacket};
+
+	let tcp_rerp = TcpPacket::new(&buf[tcp_start..size_read])
+		.context("Failed to allocate tcp repr")?
+		.from_packet();
+
+	let mut ipv6 = MutableIpv6Packet::new(&mut buf).context("Failed to allocate ipv6 packet")?;
+	ipv6.set_version(6);
+	ipv6.set_traffic_class(0);
+	ipv6.set_flow_label(0);
+	ipv6.set_hop_limit(4);
+	ipv6.set_next_header(IpNextHeaderProtocols::Tcp);
+	ipv6.set_payload_length((size_read - tcp_start) as u16);
+	ipv6.set_source(src);
+	ipv6.set_destination(dst);
+
+	let length = ipv6.packet_size();
+
+	let mut tcp =
+		MutableTcpPacket::new(ipv6.payload_mut()).context("Failed to alocate tcp packet")?;
+
+	tcp.populate(&tcp_rerp);
+
+	let checksum_tcp = pnet::packet::tcp::ipv6_checksum(&tcp.to_immutable(), &src, &dst);
+	tcp.set_checksum(checksum_tcp);
+
+	trace!("writing v6: {:?}", ipv6);
+	tun.write_all(&ipv6.packet()[..length]).await?;
 
 	Ok(())
 }

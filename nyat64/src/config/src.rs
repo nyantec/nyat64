@@ -19,6 +19,8 @@ use nom::HexDisplay;
 
 use crate::config::arp::ArpCache;
 use crate::config::{Config, MapResult};
+use nom::combinator::opt;
+use pnet::packet::tcp::TcpOption;
 
 pub async fn tun_to_dst(
 	mut tun: AsyncTunSocket,
@@ -84,9 +86,29 @@ async fn parse(
 
 	match ipv6.get_next_header() {
 		IpNextHeaderProtocols::Udp => {
-			parse_udp(buf, payload_start, map, iface_dst_write, mac, if_dst_mac).await
+			parse_udp(
+				buf,
+				payload_start,
+				size,
+				map,
+				iface_dst_write,
+				mac,
+				if_dst_mac,
+			)
+			.await
 		}
-		IpNextHeaderProtocols::Tcp => bail!("ipmlement tcp"),
+		IpNextHeaderProtocols::Tcp => {
+			parse_tcp(
+				buf,
+				payload_start,
+				size,
+				map,
+				iface_dst_write,
+				mac,
+				if_dst_mac,
+			)
+			.await
+		}
 		_ => bail!("Protocol not yet supported: {}", ipv6.get_next_header()),
 	}
 }
@@ -94,6 +116,7 @@ async fn parse(
 async fn parse_udp(
 	mut buf: [u8; 1500],
 	udp_start: usize,
+	size_read: usize,
 	map: MapResult,
 	mut iface_dst_write: RawPacketStream,
 	dst_mac: MacAddr,
@@ -101,7 +124,7 @@ async fn parse_udp(
 ) -> Result<()> {
 	use pnet::packet::udp::{MutableUdpPacket, UdpPacket};
 
-	let udp_repr = UdpPacket::new(&buf[udp_start..])
+	let udp_repr = UdpPacket::new(&buf[udp_start..size_read])
 		.context("Failed to allocate udp repr")?
 		.from_packet();
 
@@ -154,6 +177,101 @@ async fn parse_udp(
 	trace!("writing: {:?}", ipv4);
 	iface_dst_write
 		.write_all(&ethernet.packet()[..length])
+		.await?;
+
+	Ok(())
+}
+async fn parse_tcp(
+	mut buf: [u8; 1500],
+	tcp_start: usize,
+	size_read: usize,
+	map: MapResult,
+	mut iface_dst_write: RawPacketStream,
+	dst_mac: MacAddr,
+	src_mac: MacAddr,
+) -> Result<()> {
+	use pnet::packet::tcp::{MutableTcpPacket, TcpPacket};
+
+	/*let tcp_repr = TcpPacuket::new(&buf[tcp_start..size_read])
+	.context("Failed to allocate tcp repr")?
+	.from_packet();*/
+	//let tcp_cache = (&buf[tcp_start..size_read]).clone();
+	let mut tcp_cache = Vec::new();
+	tcp_cache.resize(size_read - tcp_start, 0);
+	tcp_cache.copy_from_slice(&buf[tcp_start..size_read]);
+
+	//trace!("got tcp: {:?}", tcp_repr);
+
+	let mut ethernet =
+		MutableEthernetPacket::new(&mut buf).context("Failed to allocate ethernet packet")?;
+	ethernet.set_destination(dst_mac);
+	ethernet.set_source(src_mac);
+	ethernet.set_ethertype(EtherTypes::Ipv4);
+
+	let mut ipv4 =
+		MutableIpv4Packet::new(ethernet.payload_mut()).context("Failed to allocate ipv4 packet")?;
+	ipv4.set_version(4);
+	ipv4.set_header_length(5);
+	ipv4.set_dscp(0);
+	ipv4.set_ecn(0);
+	ipv4.set_total_length((size_read - tcp_start + 20) as u16);
+	ipv4.set_identification(0);
+	ipv4.set_flags(2);
+	ipv4.set_fragment_offset(0);
+	ipv4.set_ttl(64);
+	ipv4.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+	ipv4.set_source(map.src);
+	ipv4.set_destination(map.dst);
+
+	ipv4.set_checksum(pnet::packet::ipv4::checksum(&ipv4.to_immutable()));
+
+	let length = ipv4.packet_size() + 12;
+
+	let mut tcp_buf: &mut [u8] = ipv4.payload_mut();
+	if tcp_buf.len() != tcp_cache.len() {
+		bail!("invalid length {} {}", tcp_buf.len(), tcp_cache.len());
+	}
+
+	tcp_buf.copy_from_slice(&tcp_cache);
+
+	drop(tcp_buf);
+	let mut tcp =
+		MutableTcpPacket::new(ipv4.payload_mut()).context("Failed to allocate tcp packet")?;
+
+	let checksum_tcp = pnet::packet::tcp::ipv4_checksum(&tcp.to_immutable(), &map.src, &map.dst);
+	tcp.set_checksum(checksum_tcp);
+
+	/*let mut tcp =
+	MutableTcpPacket::new(ipv4.payload_mut()).context("Failed to alocate tcp packet")?;*/
+
+	/*//tcp.populate(&tcp_rerp);
+	//tcp.set_options(&tcp_rerp.options);
+	tcp.set_data_offset(tcp_repr.data_offset + 1);
+	tcp.set_source(tcp_repr.source);
+	tcp.set_destination(tcp_repr.destination);
+	tcp.set_sequence(tcp_repr.sequence);
+	tcp.set_acknowledgement(tcp_repr.acknowledgement);
+	tcp.set_reserved(tcp_repr.reserved);
+	tcp.set_flags(tcp_repr.flags);
+	tcp.set_window(tcp_repr.window);
+	tcp.set_urgent_ptr(tcp_repr.urgent_ptr);
+
+	/*let mut tcp_options_buf: &mut [u8] = tcp.get_options_raw_mut();
+	tcp_options_buf.copy_from_slice()*/
+	let mut options: Vec<TcpOption> = tcp_repr.options.clone();
+	options.push(TcpOption::nop());
+	//tcp.set_options(&options);
+	tcp.set_options(&[TcpOption::nop()]);
+
+	let mut tcp_buf = tcp.payload_mut();
+	tcp_buf.copy_from_slice(&tcp_repr.payload);*/
+
+	/*let checksum_tcp = pnet::packet::tcp::ipv4_checksum(&tcp.to_immutable(), &map.src, &map.dst);
+	tcp.set_checksum(checksum_tcp);*/
+
+	trace!("writing v4: {:?}", ipv4);
+	iface_dst_write
+		.write_all(&ethernet.packet()[..length + 2])
 		.await?;
 
 	Ok(())
