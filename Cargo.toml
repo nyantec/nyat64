@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "tun",
+    "nyat64"
+]

@@ -1,0 +1,17 @@
+[package]
+name = "tun"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = [ "async" ]
+async = [ "async-io", "futures-lite" ]
+
+[dependencies]
+libc = "0.2"
+anyhow = "1"
+
+#async-std = { version = "1.9", features = [ "attributes", "unstable" ] }
+async-io = { version = "1.4", optional = true }
+futures-lite = { version = "1.11", optional = true }
