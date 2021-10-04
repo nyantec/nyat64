@@ -120,7 +120,7 @@ async fn parse_udp(
 	udp.set_destination(udp_repr.destination);
 	udp.set_length(udp_repr.length);
 	let mut udp_buf = udp.payload_mut();
-	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize]);
+	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize - 8]);
 	//udp.populate(&udp_repr);
 
 	//let length = length + udp.packet_size();
