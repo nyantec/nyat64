@@ -1,26 +1,98 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::convert::Infallible;
+use std::fmt::Formatter;
+use std::marker::PhantomData;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::os::unix::io::FromRawFd;
+use std::result::Result as StdResult;
+use std::str::FromStr;
 
-use crate::config::arp::ArpCache;
-use crate::iptools::MacAddrLinxExt;
 use afpacket::r#async::RawPacketStream;
 use anyhow::{bail, Context, Result};
 use async_std::prelude::FutureExt;
 use cached::proc_macro::cached;
+use log::*;
+use nix::libc;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use pnet::util::MacAddr;
-use serde::Deserialize;
+use serde::de::{EnumAccess, Error, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use tun::AsyncTunSocket;
 
 mod arp;
 mod dst;
 mod src;
 
+use crate::config::arp::ArpCache;
+use crate::iptools::{IpTool, MacAddrLinxExt};
+
 static mut MAPPINGS: Vec<MapConfig> = Vec::new();
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct InterfaceConfig {
-	pub ipv4: String,
-	pub ipv6: String,
+	pub name: String,
+
+	pub address: Option<IpAddr>,
+
+	pub mask: Option<u32>,
+
+	#[serde(default)]
+	pub mtu: u32,
+}
+
+impl FromStr for InterfaceConfig {
+	type Err = Infallible;
+
+	fn from_str(s: &str) -> StdResult<Self, Self::Err> {
+		Ok(InterfaceConfig {
+			name: s.to_string(),
+			..Default::default()
+		})
+	}
+}
+
+fn string_or_struct<'de, T, D>(deserializer: D) -> StdResult<T, D::Error>
+where
+	T: Deserialize<'de> + FromStr<Err = Infallible>,
+	D: Deserializer<'de>,
+{
+	struct StringOrStruct<T>(PhantomData<fn() -> T>);
+
+	impl<'de, T> Visitor<'de> for StringOrStruct<T>
+	where
+		T: Deserialize<'de> + FromStr<Err = Infallible>,
+	{
+		type Value = T;
+
+		fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+			// TODO: fmt with const struct from T
+			formatter.write_str("string or map")
+		}
+
+		fn visit_str<E>(self, v: &str) -> StdResult<Self::Value, E>
+		where
+			E: Error,
+		{
+			Ok(FromStr::from_str(v).unwrap())
+		}
+
+		fn visit_map<M>(self, map: M) -> StdResult<Self::Value, M::Error>
+		where
+			M: MapAccess<'de>,
+		{
+			Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+		}
+	}
+
+	deserializer.deserialize_any(StringOrStruct(PhantomData))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InterfacesConfig {
+	#[serde(deserialize_with = "string_or_struct")]
+	pub ipv4: InterfaceConfig,
+
+	#[serde(deserialize_with = "string_or_struct")]
+	pub ipv6: InterfaceConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,7 +106,7 @@ pub struct MapConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-	pub interfaces: InterfaceConfig,
+	pub interfaces: InterfacesConfig,
 	pub mappings: Vec<MapConfig>,
 }
 
@@ -48,19 +120,34 @@ impl Config {
 	}
 
 	pub async fn open_ipv6_stream(&self) -> Result<AsyncTunSocket> {
-		let ifname = &self.interfaces.ipv6;
+		let ifcfg = &self.interfaces.ipv6;
 
-		let socket = AsyncTunSocket::new(ifname)?;
+		let socket = AsyncTunSocket::new(&ifcfg.name)?;
+
+		let fd = unsafe { libc::socket(libc::AF_INET6, libc::SOCK_DGRAM, libc::IPPROTO_IP) };
+		if fd < 0 {
+			return Err(std::io::Error::last_os_error().into());
+		}
+		let iptool = unsafe { IpTool::from_raw_fd(fd) };
+		if let Some(address) = ifcfg.address {
+			trace!("set address {} on interface {}", address, &ifcfg.name);
+			iptool.set_address(&ifcfg.name, &address, ifcfg.mask.unwrap_or(64))?;
+			iptool.set_up(&ifcfg.name, true)?;
+		}
+
+		if ifcfg.mtu != 0 {
+			iptool.set_mtu(&ifcfg.name, ifcfg.mtu)?;
+		}
 
 		Ok(socket)
 	}
 
 	pub async fn open_ipv4_stream(&self) -> Result<RawPacketStream> {
-		let ifname = &self.interfaces.ipv4;
+		let ifcfg = &self.interfaces.ipv4;
 
 		let mut socket = RawPacketStream::new()?;
 
-		socket.bind(ifname);
+		socket.bind(&ifcfg.name)?;
 
 		// TODO: ebfp filter?
 
@@ -71,7 +158,7 @@ impl Config {
 		let ipv6 = self.open_ipv6_stream().await?;
 
 		let ipv4 = self.open_ipv4_stream().await?;
-		let ipv4_mac = MacAddr::from_interface(&self.interfaces.ipv4)?;
+		let ipv4_mac = MacAddr::from_interface(&self.interfaces.ipv4.name)?;
 
 		let arp_cache = ArpCache::new();
 

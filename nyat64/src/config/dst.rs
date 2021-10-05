@@ -107,7 +107,7 @@ async fn parse_udp(
 	ipv6.set_flow_label(0);
 	ipv6.set_hop_limit(4);
 	ipv6.set_next_header(IpNextHeaderProtocols::Udp);
-	ipv6.set_payload_length((udp_repr.length + 8) as u16);
+	ipv6.set_payload_length((udp_repr.length) as u16);
 	ipv6.set_source(src);
 	ipv6.set_destination(dst);
 
@@ -120,19 +120,14 @@ async fn parse_udp(
 	udp.set_destination(udp_repr.destination);
 	udp.set_length(udp_repr.length);
 	let mut udp_buf = udp.payload_mut();
-	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize]);
-	//udp.populate(&udp_repr);
-
-	//let length = length + udp.packet_size();
-	//let length = ipv6.get_packet_size();
+	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize - 8]);
 
 	let checksum_udp = pnet::packet::udp::ipv6_checksum(&udp.to_immutable(), &src, &dst);
 	udp.set_checksum(checksum_udp);
 
-	ipv6.set_payload_length((udp_repr.length) as u16);
 	trace!("writing v6: {:?}", ipv6);
 
-	tun.write_all(&ipv6.packet()[..length - 8]).await?;
+	tun.write_all(&ipv6.packet()[..length]).await?;
 
 	Ok(())
 }

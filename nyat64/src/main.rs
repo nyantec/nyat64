@@ -5,6 +5,7 @@ use getopts::Options;
 use log::*;
 
 mod config;
+#[allow(dead_code)]
 mod iptools;
 
 use config::Config;

@@ -1,0 +1,17 @@
+{
+  "interfaces": {
+    "ipv4": "router-dst",
+    "ipv6": {
+      "address": "fd00:3da::1",
+      "name": "mytun"
+    }
+  },
+  "mappings": [
+    {
+      "ipv4_local": "172.16.20.2",
+      "ipv4_remote": "172.16.20.1",
+      "ipv6_local": "fd00:3da::2",
+      "ipv6_remote": "fd00:3da::1"
+    }
+  ]
+}

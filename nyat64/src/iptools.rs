@@ -1,14 +1,21 @@
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::net::IpAddr;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 
 use anyhow::{bail, Error, Result};
 use nix::libc;
-use nix::libc::{c_int, c_short, c_uchar, sockaddr, sockaddr_in};
+use nix::libc::{c_int, c_short, c_uchar, in6_addr, sockaddr, sockaddr_in, sockaddr_in6};
 use pnet::datalink::MacAddr;
 
 /// Only use it for a short amount of time, as it does not close it's ioctl socket
 pub struct IpTool {
 	fd: RawFd,
 }
+
+/*
+TODO: is it already non send?
+impl !Send for IpTool {}
+impl !Sync for IpTool {}
+ */
 
 impl IpTool {
 	pub fn new() -> Result<Self> {
@@ -108,6 +115,56 @@ impl IpTool {
 		Ok(mtu)
 	}
 
+	pub fn get_index(&self, dev: &str) -> Result<c_int> {
+		let mut ifr = Ifreq::new(dev);
+
+		let SIOCGIFINDEX = 0x8933;
+
+		let res = unsafe { libc::ioctl(self.fd, SIOCGIFINDEX as _, &mut ifr) };
+		if res < 0 {
+			return Err(last_err());
+		}
+
+		Ok(unsafe { ifr.ifr_ifru.ifru_ivalue })
+	}
+
+	// TODO: mut?
+	pub fn set_address(&self, dev: &str, address: &IpAddr, prefix_length: u32) -> Result<()> {
+		let index = self.get_index(dev)?;
+		let res = match address {
+			IpAddr::V4(addr) => todo!(),
+			IpAddr::V6(addr) => {
+				let mut ifr = Ifreq6 {
+					prefix_length,
+					ifindex: index as _,
+					addr: in6_addr {
+						s6_addr: addr.octets(),
+					},
+				};
+				unsafe { libc::ioctl(self.fd, libc::SIOCSIFADDR as _, &mut ifr) }
+			}
+		};
+
+		if res < 0 {
+			return Err(last_err());
+		}
+
+		Ok(())
+		//let mut ifr = Ifreq::new(dev);
+		/*match address {
+			IpAddr::V4(addr) => {
+				ifr.ifr_ifru.ifru_addr_v4.sin_family = libc::AF_INET as libc::sa_family_t;
+				ifr.ifr_ifru.ifru_addr_v4.sin_addr.s_addr = u32::from_ne_bytes(addr.octets());
+			}
+		}*/
+
+		/*let res = unsafe { libc::ioctl(self.fd, libc::SIOCSIFADDR as _, &mut ifr) };*/
+	}
+
+	pub fn get_address(&self, dev: &str) -> Result<IpAddr> {
+		todo!("implement get_address")
+	}
+
 	pub fn set_mac(&self, dev: &str, mac: &str) -> Result<()> {
 		return self.set_mac_sa_data(dev, parse_mac_addr(mac)?);
 	}
@@ -175,16 +232,23 @@ impl AsRawFd for IpTool {
 	}
 }
 
+impl FromRawFd for IpTool {
+	unsafe fn from_raw_fd(fd: RawFd) -> Self {
+		Self { fd }
+	}
+}
+
 #[repr(C)]
 union IfrIfru {
 	ifru_addr: sockaddr,
 	ifru_hwaddr: sockaddr,
 	ifru_addr_v4: sockaddr_in,
-	ifru_addr_v6: sockaddr_in,
+	ifru_addr_v6: sockaddr_in6,
 	ifru_dstaddr: sockaddr,
 	ifru_broadaddr: sockaddr,
 	ifru_flags: c_short,
 	ifru_metric: c_int,
+	ifru_ivalue: c_int,
 	ifru_mtu: c_int,
 	ifru_phys: c_int,
 	ifru_media: c_int,
@@ -206,16 +270,28 @@ pub struct Ifreq {
 
 impl Ifreq {
 	pub fn new(dev: &str) -> Self {
-		let mut ifr_name = [0; libc::IF_NAMESIZE];
+		//let mut ifr_name = [0; libc::IF_NAMESIZE];
 
-		copy_slice(&mut ifr_name, dev.as_bytes());
 		//ifr_name[..dev.len()].copy_from_slice(dev.as_bytes().as_ref());
 
-		Self {
+		let s: [u8; core::mem::size_of::<Self>()] = [0; core::mem::size_of::<Self>()];
+		let mut s: Self = unsafe { core::mem::transmute(s) };
+
+		copy_slice(&mut s.ifr_name, dev.as_bytes());
+
+		s
+		/*Self {
 			ifr_name,
 			ifr_ifru: IfrIfru { ifru_flags: 0 },
-		}
+		}*/
 	}
+}
+
+#[repr(C)]
+struct Ifreq6 {
+	addr: in6_addr,
+	prefix_length: u32,
+	ifindex: libc::c_uint,
 }
 
 #[cfg(test)]
