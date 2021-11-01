@@ -10,6 +10,7 @@ use afpacket::r#async::RawPacketStream;
 use anyhow::{bail, Context, Result};
 use async_std::prelude::FutureExt;
 use cached::proc_macro::cached;
+use iptool::{IpTool, MacAddrLinxExt};
 use log::*;
 use nix::libc;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
@@ -23,7 +24,6 @@ mod dst;
 mod src;
 
 use crate::config::arp::ArpCache;
-use crate::iptools::{IpTool, MacAddrLinxExt};
 
 static mut MAPPINGS: Vec<MapConfig> = Vec::new();
 

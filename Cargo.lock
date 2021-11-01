@@ -585,6 +585,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iptool"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0e43d3acb4d8cdbe699d4665cd903127dafc7958218c1bcb5a2297000e05738"
+dependencies = [
+ "libc",
+ "pnet",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -704,6 +714,7 @@ dependencies = [
  "cached",
  "env_logger",
  "getopts",
+ "iptool",
  "log",
  "nix",
  "nom",
