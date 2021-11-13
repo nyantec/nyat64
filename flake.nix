@@ -19,7 +19,7 @@
         } ''
           mkdir -p usr/bin $out
           cp ${nyat64}/bin/nyat64 usr/bin
-          tar --zstd -cf $out/nyat64-x86_64-${nyat64.version}.pkg usr
+          tar --zstd -cf $out/nat64-x86-64-SNAPSHOT.pkg usr
         ''
       ) {};
     };
