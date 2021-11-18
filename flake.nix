@@ -1,6 +1,8 @@
 {
   description = "nyat64";
 
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable-small";
+
   outputs = { self, nixpkgs }: let
     overlay = final: prev: {
       nyat64 = final.callPackage (
