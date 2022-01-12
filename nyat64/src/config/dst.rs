@@ -77,7 +77,13 @@ async fn parse(
 	//let payload_start = length + ipv4.packet_size();
 	let payload_start = length + ipv4.get_header_length() as usize * 4;
 
-	let (src_v6, dst_v6) = MapResult::find_v4(src_addr4, dst_addr4).context("No Mappings found")?;
+	let map_result = MapResult::find_v4(src_addr4, dst_addr4).context("No Mappings found");
+	if let Err(e) = map_result {
+		debug!("{}", e);
+		return Ok(());
+	}
+	let (src_v6, dst_v6) = map_result.unwrap();
+
 	trace!("found mapping: {} -> {}", src_v6, dst_v6);
 
 	match ipv4.get_next_level_protocol() {
