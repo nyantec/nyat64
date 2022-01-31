@@ -61,7 +61,8 @@ async fn parse(
 
 	let version = buf[0] >> 4;
 	if version != 6 {
-		bail!("Does not seem to be an ipv6 packet: {}", version);
+		debug!("Does not seem to be an ipv6 packet: {}", version);
+		return Ok(());
 	}
 
 	let ipv6 = Ipv6Packet::new(&buf).context("Buffer not big enough for ipv6 packet")?;
@@ -74,13 +75,23 @@ async fn parse(
 	let payload_start = ipv6.packet_size() - ipv6.get_payload_length() as usize;
 	trace!("payload starts at: {}", payload_start);
 
-	let map = MapResult::find_v6(src_addr6, dst_addr6).context("No Mappings found")?;
+	let map = MapResult::find_v6(src_addr6, dst_addr6).context("No Mappings found");
+	if let Err(e) = map {
+		debug!("{}", e);
+		return Ok(());
+	}
+	let map = map.unwrap();
 	trace!("found mapping: {:?}", map);
 
 	let dst_ipv4_arp = if let Some(gw) = map.gw { gw } else { map.dst };
 	let mac = arp_cache
 		.request(&mut iface_dst_write, map.src, dst_ipv4_arp, if_dst_mac)
 		.await?;
+	if mac.is_none() {
+		trace!("Address not found on the dst iface");
+		return Ok(());
+	}
+	let mac = mac.unwrap();
 
 	match ipv6.get_next_header() {
 		IpNextHeaderProtocols::Udp => {

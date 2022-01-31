@@ -34,10 +34,10 @@ impl ArpCache {
 		src_addr: Ipv4Addr,
 		dst_addr: Ipv4Addr,
 		if_mac: MacAddr,
-	) -> Result<MacAddr> {
+	) -> Result<Option<MacAddr>> {
 		{
 			if let Some(addr) = self.try_get(&dst_addr).await {
-				return Ok(addr);
+				return Ok(Some(addr));
 			}
 		}
 
@@ -46,12 +46,12 @@ impl ArpCache {
 		async_std::task::sleep(Duration::from_millis(100)).await;
 		for _ in 0..100 {
 			if let Some(addr) = self.try_get(&dst_addr).await {
-				return Ok(addr);
+				return Ok(Some(addr));
 			}
 			async_std::task::sleep(Duration::from_millis(50)).await;
 		}
 
-		bail!("Address not found on the dst iface")
+		Ok(None)
 	}
 
 	pub async fn try_get(&self, dst_addr: &Ipv4Addr) -> Option<MacAddr> {
@@ -121,15 +121,18 @@ impl ArpCache {
 		let arp = ArpPacket::new(buf).context("Allocate arp packet")?;
 
 		if arp.get_operation() != ArpOperations::Reply {
-			bail!("Not an arp reply");
+			trace!("Not an arp reply");
+			return Ok(());
 		};
 
 		if arp.get_protocol_type() != EtherTypes::Ipv4 {
-			bail!("Wrong arp ethertype")
+			trace!("Wrong arp ethertype");
+			return Ok(());
 		}
 
 		if arp.get_hw_addr_len() != 6 || arp.get_proto_addr_len() != 4 {
-			bail!("Invalid arp address length");
+			trace!("Invalid arp address length");
+			return Ok(());
 		}
 
 		let src_pr_addr = arp.get_sender_proto_addr();
