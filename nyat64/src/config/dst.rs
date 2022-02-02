@@ -1,5 +1,5 @@
 use afpacket::r#async::RawPacketStream;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_std::io::prelude::*;
 use async_std::net::{Ipv4Addr, Ipv6Addr};
 use log::*;
@@ -63,14 +63,18 @@ async fn parse(
 	}
 
 	if ethernet.get_ethertype() != EtherTypes::Ipv4 {
-		bail!("Invalid next header Protocol: {}", ethernet.get_ethertype());
+		debug!("Invalid next header Protocol: {}", ethernet.get_ethertype());
+		return Ok(());
 	}
 	let length = ethernet.packet_size();
 
 	let ipv4 = Ipv4Packet::new(ethernet.payload()).context("Failed to allocate ipv4 packet")?;
 	trace!("ipv4: {:?}", ipv4);
 
-	super::supports(ipv4.get_next_level_protocol())?;
+	if let Err(e) = super::supports(ipv4.get_next_level_protocol()) {
+		debug!("{}", e);
+		return Ok(());
+	}
 
 	let src_addr4 = ipv4.get_source();
 	let dst_addr4 = ipv4.get_destination();
@@ -88,8 +92,14 @@ async fn parse(
 
 	match ipv4.get_next_level_protocol() {
 		IpNextHeaderProtocols::Udp => parse_udp(buf, payload_start, src_v6, dst_v6, tun).await,
-		IpNextHeaderProtocols::Tcp => bail!("implement tcp"),
-		p => bail!("Protocol not yet supported: {}", p),
+		IpNextHeaderProtocols::Tcp => {
+			debug!("implement tcp");
+			Ok(())
+		}
+		p => {
+			debug!("Rrotocol not yet supported: {}", p);
+			Ok(())
+		}
 	}
 }
 

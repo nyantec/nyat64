@@ -68,7 +68,10 @@ async fn parse(
 	let ipv6 = Ipv6Packet::new(&buf).context("Buffer not big enough for ipv6 packet")?;
 	trace!("ipv6: {:?}", ipv6);
 
-	super::supports(ipv6.get_next_header())?;
+	if let Err(e) = super::supports(ipv6.get_next_header()) {
+		debug!("{}", e);
+		return Ok(());
+	}
 
 	let src_addr6 = ipv6.get_source();
 	let dst_addr6 = ipv6.get_destination();
@@ -97,8 +100,14 @@ async fn parse(
 		IpNextHeaderProtocols::Udp => {
 			parse_udp(buf, payload_start, map, iface_dst_write, mac, if_dst_mac).await
 		}
-		IpNextHeaderProtocols::Tcp => bail!("ipmlement tcp"),
-		_ => bail!("Protocol not yet supported: {}", ipv6.get_next_header()),
+		IpNextHeaderProtocols::Tcp => {
+			debug!("implement TCP");
+			Ok(())
+		}
+		_ => {
+			debug!("Protocol not yet supported: {}", ipv6.get_next_header());
+			Ok(())
+		}
 	}
 }
 
