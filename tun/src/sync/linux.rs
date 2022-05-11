@@ -1,5 +1,4 @@
-use std::io::Error as IoError;
-use std::io::Result as IoResult;
+use std::io::{Error as IoError, Result as IoResult};
 use std::os::unix::io::{AsRawFd, RawFd};
 
 use anyhow::{bail, Context, Result};

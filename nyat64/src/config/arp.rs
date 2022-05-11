@@ -1,5 +1,6 @@
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use afpacket::r#async::RawPacketStream;
 use anyhow::{bail, Context, Result};
@@ -13,7 +14,6 @@ use pnet::packet::arp::{
 use pnet::packet::ethernet::{EtherTypes, Ethernet, MutableEthernetPacket};
 use pnet::packet::Packet;
 use pnet::util::MacAddr;
-use std::time::Duration;
 
 type ArpTimedCache = TimedCache<Ipv4Addr, MacAddr>;
 

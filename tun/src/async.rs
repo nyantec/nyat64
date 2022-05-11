@@ -1,16 +1,15 @@
+use std::io::Result as IoResult;
 #[cfg(target_family = "unix")]
 use std::os::unix::io::{AsRawFd, RawFd};
-
-use std::io::Result as IoResult;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use anyhow::Result;
 use async_io::Async;
 use futures_lite::io::{AsyncRead, AsyncWrite};
 
 use crate::TunSocket;
-use std::pin::Pin;
-use std::task::Poll;
 
 #[derive(Clone)]
 pub struct AsyncTunSocket(Arc<Async<TunSocket>>);
