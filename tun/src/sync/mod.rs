@@ -1,8 +1,7 @@
 #[cfg(target_os = "linux")]
 mod linux;
 
-use std::io::Result as IoResult;
-use std::io::{Read, Write};
+use std::io::{Read, Result as IoResult, Write};
 #[cfg(target_family = "unix")]
 use std::os::unix::io::RawFd;
 

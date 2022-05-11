@@ -3,19 +3,16 @@ use anyhow::{Context, Result};
 use async_std::io::prelude::*;
 use async_std::net::{Ipv4Addr, Ipv6Addr};
 use log::*;
-use tun::AsyncTunSocket;
-
+#[cfg(feature = "nom")]
+use nom::HexDisplay;
 use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::udp::MutableUdpPacket;
-use pnet::packet::FromPacket;
-use pnet::packet::{MutablePacket, Packet, PacketSize};
+use pnet::packet::{FromPacket, MutablePacket, Packet, PacketSize};
 use pnet::util::MacAddr;
-
-#[cfg(feature = "nom")]
-use nom::HexDisplay;
+use tun::AsyncTunSocket;
 
 use crate::config::arp::ArpCache;
 use crate::config::{Config, MapResult};
