@@ -1,7 +1,7 @@
 use afpacket::r#async::RawPacketStream;
 use anyhow::{Context, Result};
 use async_std::io::prelude::*;
-use async_std::net::{Ipv4Addr, Ipv6Addr};
+use async_std::net::Ipv6Addr;
 use log::*;
 #[cfg(feature = "nom")]
 use nom::HexDisplay;
@@ -9,13 +9,11 @@ use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::{FromPacket, MutablePacket, Packet, PacketSize};
-use pnet::util::MacAddr;
 use tun::AsyncTunSocket;
 
 use crate::config::arp::ArpCache;
-use crate::config::{Config, MapResult};
+use crate::config::MapResult;
 
 pub async fn dst_to_tun(
 	mut iface_dst_read: RawPacketStream,
@@ -46,14 +44,13 @@ pub async fn dst_to_tun(
 async fn parse(
 	mut buf: [u8; 1500],
 	size: usize,
-	mut tun: AsyncTunSocket,
+	tun: AsyncTunSocket,
 	arp_cache: ArpCache,
 ) -> Result<()> {
 	#[cfg(feature = "debug")]
 	debug!("dst:\n{}", &(buf[..size]).to_hex(24));
 
-	let mut ethernet =
-		MutableEthernetPacket::new(&mut buf).context("Failed to allocate ethernet")?;
+	let ethernet = MutableEthernetPacket::new(&mut buf).context("Failed to allocate ethernet")?;
 
 	if ethernet.get_ethertype() == EtherTypes::Arp {
 		return arp_cache.parse_arp(ethernet.payload()).await;
@@ -132,7 +129,7 @@ async fn parse_udp(
 	udp.set_source(udp_repr.source);
 	udp.set_destination(udp_repr.destination);
 	udp.set_length(udp_repr.length);
-	let mut udp_buf = udp.payload_mut();
+	let udp_buf = udp.payload_mut();
 	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize - 8]);
 
 	let checksum_udp = pnet::packet::udp::ipv6_checksum(&udp.to_immutable(), &src, &dst);

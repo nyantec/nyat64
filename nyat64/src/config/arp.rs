@@ -3,14 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use afpacket::r#async::RawPacketStream;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_std::prelude::*;
 use async_std::sync::Mutex;
 use cached::{Cached, TimedCache};
 use log::*;
-use pnet::packet::arp::{
-	Arp, ArpHardwareType, ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket,
-};
+use pnet::packet::arp::{Arp, ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::{EtherTypes, Ethernet, MutableEthernetPacket};
 use pnet::packet::Packet;
 use pnet::util::MacAddr;

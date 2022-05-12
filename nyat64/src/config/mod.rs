@@ -15,7 +15,7 @@ use log::*;
 use nix::libc;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use pnet::util::MacAddr;
-use serde::de::{EnumAccess, Error, MapAccess, SeqAccess, Visitor};
+use serde::de::{Error, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use tun::AsyncTunSocket;
 
