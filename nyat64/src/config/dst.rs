@@ -94,7 +94,7 @@ async fn parse(
 			Ok(())
 		}
 		p => {
-			debug!("Rrotocol not yet supported: {}", p);
+			debug!("Protocol not yet supported: {}", p);
 			Ok(())
 		}
 	}
