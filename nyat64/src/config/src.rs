@@ -1,7 +1,6 @@
 use afpacket::r#async::RawPacketStream;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_std::io::prelude::*;
-use async_std::net::Ipv4Addr;
 use log::*;
 #[cfg(feature = "nom")]
 use nom::HexDisplay;
@@ -9,13 +8,12 @@ use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::{FromPacket, MutablePacket, Packet, PacketSize};
 use pnet::util::MacAddr;
 use tun::AsyncTunSocket;
 
 use crate::config::arp::ArpCache;
-use crate::config::{Config, MapResult};
+use crate::config::MapResult;
 
 pub async fn tun_to_dst(
 	mut tun: AsyncTunSocket,
@@ -42,12 +40,10 @@ pub async fn tun_to_dst(
 			}
 		});
 	}
-
-	bail!("The tun loop should never exit")
 }
 
 async fn parse(
-	mut buf: [u8; 1500],
+	buf: [u8; 1500],
 	size: usize,
 	mut iface_dst_write: RawPacketStream,
 	if_dst_mac: MacAddr,
@@ -161,7 +157,7 @@ async fn parse_udp(
 	udp.set_source(udp_repr.source);
 	udp.set_destination(udp_repr.destination);
 	udp.set_length(udp_repr.length);
-	let mut udp_buf = udp.payload_mut();
+	let udp_buf = udp.payload_mut();
 	udp_buf.copy_from_slice(&udp_repr.payload[..udp_repr.length as usize - 8]);
 
 	//let length = length + udp.packet_size();
