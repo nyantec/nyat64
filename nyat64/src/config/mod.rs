@@ -108,6 +108,9 @@ pub struct MapConfig {
 pub struct Config {
 	pub interfaces: InterfacesConfig,
 	pub mappings: Vec<MapConfig>,
+
+	#[serde(default)]
+	pub send_arp: bool,
 }
 
 impl Config {
@@ -166,7 +169,7 @@ impl Config {
 		unsafe { MAPPINGS = self.mappings };
 
 		let src_fut = src::tun_to_dst(ipv6.clone(), ipv4.clone(), ipv4_mac, arp_cache.clone());
-		let dst_fut = dst::dst_to_tun(ipv4, ipv6, arp_cache);
+		let dst_fut = dst::dst_to_tun(ipv4, ipv6, arp_cache, ipv4_mac, self.send_arp);
 
 		src_fut.try_join(dst_fut).await?;
 
@@ -200,6 +203,11 @@ impl MapResult {
 		find_v4_cached(dst, src)
 	}
 
+	#[inline(always)]
+	pub fn find_v4_arp(dst: Ipv4Addr) -> Option<()> {
+		find_v4_arp_cached(dst)
+	}
+
 	/*#[cached(size = 20)]
 	pub fn find_v4(src: Ipv4Addr, dst: Ipv4Addr) -> Option<Self> {
 		todo!()
@@ -229,6 +237,20 @@ fn find_v4_cached(dst: Ipv4Addr, src: Ipv4Addr) -> Option<(Ipv6Addr, Ipv6Addr)> 
 			return Some((mapping.ipv6_local, mapping.ipv6_remote));
 		}
 	}
+	None
+}
+
+#[cached(size = 20)]
+fn find_v4_arp_cached(dst: Ipv4Addr) -> Option<()> {
+	// SAFETY: only reading and after the only write
+	let mappings = unsafe { &MAPPINGS };
+
+	for mapping in mappings {
+		if mapping.ipv4_remote == dst {
+			return Some(());
+		}
+	}
+
 	None
 }
 
