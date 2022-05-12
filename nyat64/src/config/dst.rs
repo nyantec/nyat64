@@ -10,6 +10,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::{FromPacket, MutablePacket, Packet, PacketSize};
+use pnet::util::MacAddr;
 use tun::AsyncTunSocket;
 
 use crate::config::arp::ArpCache;
@@ -19,6 +20,8 @@ pub async fn dst_to_tun(
 	mut iface_dst_read: RawPacketStream,
 	tun: AsyncTunSocket,
 	arp_cache: ArpCache,
+	dst_mac: MacAddr,
+	send_arp_reply: bool,
 ) -> Result<()> {
 	debug!("starting loop dst");
 
@@ -33,8 +36,19 @@ pub async fn dst_to_tun(
 
 		let tun = tun.clone();
 		let arp_cache = arp_cache.clone();
+		let dst_write = iface_dst_read.clone();
 		async_std::task::spawn(async move {
-			if let Err(e) = parse(buf, size, tun, arp_cache).await {
+			if let Err(e) = parse(
+				buf,
+				size,
+				tun,
+				arp_cache,
+				dst_mac,
+				dst_write,
+				send_arp_reply,
+			)
+			.await
+			{
 				info!("failed to parse dst packet: {}", e);
 			}
 		});
@@ -46,6 +60,9 @@ async fn parse(
 	size: usize,
 	tun: AsyncTunSocket,
 	arp_cache: ArpCache,
+	dst_mac: MacAddr,
+	dst_write: RawPacketStream,
+	send_arp_reply: bool,
 ) -> Result<()> {
 	#[cfg(feature = "debug")]
 	debug!("dst:\n{}", &(buf[..size]).to_hex(24));
@@ -53,7 +70,9 @@ async fn parse(
 	let ethernet = MutableEthernetPacket::new(&mut buf).context("Failed to allocate ethernet")?;
 
 	if ethernet.get_ethertype() == EtherTypes::Arp {
-		return arp_cache.parse_arp(ethernet.payload()).await;
+		return arp_cache
+			.parse_arp(ethernet.payload(), dst_mac, dst_write, send_arp_reply)
+			.await;
 	}
 
 	if ethernet.get_ethertype() != EtherTypes::Ipv4 {

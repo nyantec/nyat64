@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use afpacket::r#async::RawPacketStream;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_std::prelude::*;
 use async_std::sync::Mutex;
 use cached::{Cached, TimedCache};
@@ -12,6 +12,8 @@ use pnet::packet::arp::{Arp, ArpHardwareTypes, ArpOperations, ArpPacket, Mutable
 use pnet::packet::ethernet::{EtherTypes, Ethernet, MutableEthernetPacket};
 use pnet::packet::Packet;
 use pnet::util::MacAddr;
+
+use crate::config::MapResult;
 
 type ArpTimedCache = TimedCache<Ipv4Addr, MacAddr>;
 
@@ -115,23 +117,39 @@ impl ArpCache {
 		ethernet_packet.packet().to_vec()
 	}
 
-	pub async fn parse_arp(&self, buf: &[u8]) -> Result<()> {
-		let arp = ArpPacket::new(buf).context("Allocate arp packet")?;
-
-		if arp.get_operation() != ArpOperations::Reply {
-			trace!("Not an arp reply");
-			return Ok(());
-		};
-
+	fn check_arp(arp: &ArpPacket<'_>) -> Result<()> {
 		if arp.get_protocol_type() != EtherTypes::Ipv4 {
-			trace!("Wrong arp ethertype");
-			return Ok(());
+			bail!("Wrong arp ethertype");
 		}
 
 		if arp.get_hw_addr_len() != 6 || arp.get_proto_addr_len() != 4 {
-			trace!("Invalid arp address length");
+			bail!("Invalid arp address length");
+		}
+
+		Ok(())
+	}
+
+	pub async fn parse_arp(
+		&self,
+		buf: &[u8],
+		if_mac: MacAddr,
+		dst_write: RawPacketStream,
+		send_arp_reply: bool,
+	) -> Result<()> {
+		let arp = ArpPacket::new(buf).context("Allocate arp packet")?;
+
+		if let Err(e) = Self::check_arp(&arp) {
+			trace!("{}", e);
 			return Ok(());
 		}
+
+		if arp.get_operation() != ArpOperations::Reply {
+			if send_arp_reply {
+				return self.reply_arp(arp, if_mac, dst_write).await;
+			}
+			trace!("Arp reply disabled");
+			return Ok(());
+		};
 
 		let src_pr_addr = arp.get_sender_proto_addr();
 		let src_hw_addr = arp.get_sender_hw_addr();
@@ -139,6 +157,55 @@ impl ArpCache {
 		trace!("Found arp: '{} -> {}'", src_pr_addr, src_hw_addr);
 
 		self.set(src_pr_addr, src_hw_addr).await;
+
+		Ok(())
+	}
+
+	async fn reply_arp(
+		&self,
+		arp: ArpPacket<'_>,
+		if_mac: MacAddr,
+		mut dst_write: RawPacketStream,
+	) -> Result<()> {
+		let who = arp.get_target_proto_addr();
+		if MapResult::find_v4_arp(who).is_none() {
+			trace!("got arp request, but don't serve {}", who);
+			return Ok(());
+		}
+
+		trace!("sending arp result");
+
+		let arp_result = Arp {
+			hardware_type: ArpHardwareTypes::Ethernet,
+			protocol_type: EtherTypes::Ipv4,
+			hw_addr_len: 6,
+			proto_addr_len: 4,
+			operation: ArpOperations::Reply,
+			sender_hw_addr: if_mac,
+			sender_proto_addr: who,
+			target_hw_addr: arp.get_sender_hw_addr(),
+			target_proto_addr: arp.get_sender_proto_addr(),
+			payload: vec![],
+		};
+
+		let mut arp_buffer = [0u8; 28];
+		let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
+		arp_packet.populate(&arp_result);
+
+		let ethernet = Ethernet {
+			destination: MacAddr::broadcast(),
+			source: if_mac,
+			ethertype: EtherTypes::Arp,
+			payload: arp_packet.packet().to_vec(),
+		};
+
+		let mut ethernet_buffer = [0u8; 42];
+		let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+		ethernet_packet.populate(&ethernet);
+
+		let packet = ethernet_packet.packet().to_vec();
+
+		dst_write.write_all(&packet).await?;
 
 		Ok(())
 	}
