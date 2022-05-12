@@ -193,7 +193,7 @@ impl ArpCache {
 		arp_packet.populate(&arp_result);
 
 		let ethernet = Ethernet {
-			destination: MacAddr::broadcast(),
+			destination: arp.get_sender_hw_addr(),
 			source: if_mac,
 			ethertype: EtherTypes::Arp,
 			payload: arp_packet.packet().to_vec(),
