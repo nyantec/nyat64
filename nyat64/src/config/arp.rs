@@ -168,7 +168,8 @@ impl ArpCache {
 		mut dst_write: RawPacketStream,
 	) -> Result<()> {
 		let who = arp.get_target_proto_addr();
-		if MapResult::find_v4_arp(who).is_none() {
+		// check if a mapping exists where 'who' is the local_ipv4
+		if MapResult::find_v4_by_local(who).is_none() {
 			trace!("got arp request, but don't serve {}", who);
 			return Ok(());
 		}

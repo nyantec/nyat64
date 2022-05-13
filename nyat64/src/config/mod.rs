@@ -204,8 +204,8 @@ impl MapResult {
 	}
 
 	#[inline(always)]
-	pub fn find_v4_arp(dst: Ipv4Addr) -> Option<()> {
-		find_v4_arp_cached(dst)
+	pub fn find_v4_by_local(dst: Ipv4Addr) -> Option<()> {
+		find_v4_by_local_cached(dst)
 	}
 
 	/*#[cached(size = 20)]
@@ -241,12 +241,12 @@ fn find_v4_cached(dst: Ipv4Addr, src: Ipv4Addr) -> Option<(Ipv6Addr, Ipv6Addr)> 
 }
 
 #[cached(size = 20)]
-fn find_v4_arp_cached(dst: Ipv4Addr) -> Option<()> {
+fn find_v4_by_local_cached(addr: Ipv4Addr) -> Option<()> {
 	// SAFETY: only reading and after the only write
 	let mappings = unsafe { &MAPPINGS };
 
 	for mapping in mappings {
-		if mapping.ipv4_remote == dst {
+		if mapping.ipv4_local == addr {
 			return Some(());
 		}
 	}
